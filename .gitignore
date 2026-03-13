@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Numba cache
+__numba_cache__/
+
+# VTK output
+*.vtk
+
+# Compiled Fortran binary
+src/slimMaster/slimMaster
+
+# Symlink (recreated per build)
+src/slimMaster/dint.h
+
+# Fortran runtime logs
+fort.*
+
+# Backup files
+*.in.old

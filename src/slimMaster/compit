@@ -1,0 +1,5 @@
+#!/bin/sh -x
+
+gfortran -std=legacy -fdec -O4 slimMaster.f -o slimMaster
+#gfortran -g -std=legacy -fdec -ffpe-trap=invalid,zero,overflow slimMaster.f -o slimMaster
+#cp slimMaster ../../../../bin/slimMaster

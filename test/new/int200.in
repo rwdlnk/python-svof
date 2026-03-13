@@ -1,0 +1,60 @@
+# Sample input deck converted from legacy int200.in
+
+mesh
+False # icyl
+1 1   # NKX NKY
+0.20  # XC (1D array, NKX long)
+80    # NXL (1D array, NKX long)
+80    # NXR (1D array, NKX long)
+0.0025 # DXmin (1D array, NKX long)
+0.25  # YC (1D array, NKY long)
+100   # NYL (1D array, NKY long)
+100   # NYR (1D array, NKY long)
+0.0025 # DYmin (1D array, NKY long)
+0.0 0.4 # XL (1D array, NKX+1 long)
+0.0 0.5 # YL (1D array, NKY+1 long)
+1 162 102 202 # IFL IFR JFB JFT
+
+properties
+2 # NMAT
+1.044e-6 1.005e-6 # NU NUC
+1002.2 998.0 # RHOF RHOFC
+False 0.0 90.0 # ISURF10 sigma cangle
+
+output
+True False False # IPLOTS IARE IMOVY (IARE,IMOVY are not in legacy deck; set False)
+100.0 # PRTDT
+0.0 21.0 # PLTST1 PLTST2
+0.1 0.1 # PLTDT1 PLTDT2
+
+bcs
+1 1 1 2 # WL WR WT WB
+
+particles
+0 0 # NPX NPY
+0.0 0.0 # XPL XPR
+0.0 0.0 # YPB YPT
+
+obstacles
+0 # NOBS
+1 1 # IOMIN IOMAX (placeholders, unused when NOBS=0)
+1 1 # JOMIN JOMAX
+
+disturb
+1   # NDIS
+0   # IDIS
+0.0002 # VORIG
+0.4 0.25 1 10 # R H ILOW IHIGH
+
+svof
+0.025 # EPSI
+1.7   # OMG
+1.0   # ALPHA
+0.0 -9.81 # Gx Gy
+0.0 0.0   # UI VI
+-1.0      # CSQ
+1. 1. 1.  # Fmass Flength Ftime (legacy deck uses SI, so 1,1,1)
+False 0.0 # ISHvel SHvel
+0.0005 0.0 # DELT AUTOT
+0.2  # TWfin
+

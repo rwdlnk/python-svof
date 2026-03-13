@@ -1,0 +1,76 @@
+--Enter the heading title (30 characters max)
+R-T Fractal Code
+--!IPLOT (0=do NOT make a '.DIS' file for plotting,1= create a '.DIS' file)
+IPLOT        =     1
+!    INPUT DATA SET FOR THE SOLAVOF PROGRAM : SI UNITS
+!    INPUT FUNDIMENTAL LENGTH(FLENG) AND FUNDIMENTAL TIME(FTIME).
+FLENG        =  1.0
+FTIME        =  1.0
+!    THE FIRST 15 SPACES ARE FOR COMMMENTS ONLY!
+!------------->----5----0----5
+NU (F15.6)   =  0.000001044
+NUC (F16.6)  =  0.000001005
+ICYL(I2)     =  0
+EPSI(F15.6)  =  .025
+GX(F10.4)    =  0.
+GY(F10.4)    =  -9.81
+UI(F10.4)    =  0.
+VI(F10.4)    =  0.
+VELMX(F10.4) =  1.
+IMOVY(I2)    =  0
+OMG(F15.6)   =  1.7
+ALPHA(F15.6) =  1.
+WL(I2)       =  1
+WR(I2)       =  1
+WT(I2)       =  1
+WB(I2)       =  2
+CSQ(F10.4)   = -1.
+AUTOT(F10.4) =  0.
+ISYMPLT(I2)  =  0
+ISURF10(I2)  =  0
+SIGMA(F16.5) =  0.
+CANGLE(F10.4)=  90.
+NMAT(I2)     =  2
+RHOF(F11.5)  =  1002.2
+RHOFC(F11.5) =  998.0
+FLHT(F11.5)  =  0.
+XPL(F11.5)   =  0.0
+YPB(F11.5)   =  0.0
+XPR(F11.5)   =  0.0
+YPT(F11.5)   =  0.0
+NPX  (I4)    =    0
+NPY  (I4)    =    0
+NOBS (I4)    =    0
+NDIS (I4)    =    1
+IDIS (I4)    =    0
+VORIG(F10.7) =  0.0002
+ISHVEL(I4)   =   0
+SHVEL (F10.7)=   .0
+! TIME AND DISTANCE PARAMETERS ARE IN FUNDIMENTAL UNITS
+! ENTER THE TIME PARAMETERS.
+!
+DELT  (F15.6) = 0.0005
+TWFIN (F15.6) = 0.2001
+PRTDT (F15.6) = 100.
+pltst1(f15.6) = 0.
+pltst2(f15.6) = 21.00
+PLTDT1(F15.6) = 0.1
+PLTDT2(F15.6) = 0.1
+-NKX!-NKY!NONU!
+    1    1    0
+-XC-!-NXL!-NXR!-DXMN----!
+ 0.20   80   80  2.50e-3
+-YC-!-NYL!-NYR!-DYMN----!
+ 0.25  100  100  2.50e-3
+!BELOW ARE THE VALUES FOR XL.  THERE MUST BE NKX+1 VALUES FOR XL
+----!----!----!----!----!----!----!----!----!----!
+   0.  0.4
+!BELOW ARE THE VALUES FOR YL.  There must be NKY+1 values for YL
+----!----!----!----!----!----!----!----!----!----!
+   0.  0.5
+!Enter values of IFL,IFR,JFB,JFT cell numbers for fld 1. Add 1 for BC cells
+-IFL!-IFR!-JFB!-JFT!
+    1  162  102  202
+!Enter the disturbance parameters R,H,ILOW,IHIGH
+!--------!---------!----!----!
+       0.4       .25    1   10
