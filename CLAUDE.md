@@ -22,17 +22,20 @@ src/python_refactor/     # Python port
     mesh.py              # Structured non-uniform 2D mesh generation (meshset)
     fields.py            # Field arrays: U,V,P,F,UN,VN,PN,FN,BETA,PETA,etc.
     initcond.py          # Initial conditions: F setup, hydrostatic P, disturbances
-    solver.py            # tilde_step (vectorized), pressure_iteration (SOLA)
-    bc.py                # Boundary conditions (5 wall types)
+    solver.py            # tilde_step, pressit, vfconv, petacal, tms10 (Numba JIT)
+    bc.py                # Boundary conditions (5 wall types + periodic, Numba JIT)
     io.py                # Keyword input parser + VTK writer (Fortran-compatible)
   vmax.py                # VTK analysis tool (reads both Fortran and Python output)
   translate_legacy_to_keyword.py  # Converts old Fortran input format to keyword format
 
 test/
-  svof/                  # Fortran reference input/output
-  new/                   # Python keyword-format input
-  compare_fortran/       # Fortran comparison runs
-  compare_python/        # Python comparison runs
+  svof/                  # Fortran legacy-format input (int200.in)
+  new/                   # Python keyword-format input (int200.in, nmat1_dam.in, etc.)
+  dam_break/             # Dam break test case (NMAT=2, 40x40)
+    python/              #   Python keyword input (dam_break.in)
+    slimmaster/          #   Fortran legacy input + dint.h (int40.in)
+  periodic-RT/           # Periodic Rayleigh-Taylor test (NMAT=2, 40x80, IWL/IWR=4)
+                         #   dint.h, int80.in (Fortran), periodic_rt.in (Python)
 ```
 
 ## Key Decisions and Changes Made
@@ -70,10 +73,20 @@ Completely replaced the crude Poisson solver with a faithful port of Fortran PRE
 - Calls BC after each sweep
 - This is a Gauss-Seidel-style simultaneous P/V correction (the SOLA method)
 
-### Vectorized tilde_step (solver.py)
-Rewrote the cell-by-cell Python loops as NumPy array operations.
-Gives ~100x speedup over the original scalar loops.
-Covers advection (WUDS/alpha scheme), viscosity, pressure gradient, and gravity.
+### Numba JIT Optimization (solver.py, bc.py)
+Converted key hot loops from vectorized NumPy to scalar Numba `@njit(cache=True)` kernels:
+- `_tilde_kernel` — momentum advection, viscosity, pressure gradient (was 44s → 5s)
+- `_pressit_sweep` — SOLA pressure iteration (Gauss-Seidel, inherently sequential)
+- `_apply_bc_kernel` — boundary condition application (was 12s → 0.1s)
+- `_free_surface_bc_kernel` — free surface velocity extrapolation (was 112s → 0.9s)
+- `_vfconv_kernel`, `_petacal_kernel`, `_tms10_kernel`, `_compute_beta_kernel`
+- Pattern: thin Python wrapper extracts arrays from dataclasses, passes to @njit kernel
+- Performance: Python is within 20% of Fortran on 160x200 RT benchmark (25.6s vs 21.3s)
+
+### Periodic Boundary Conditions (mesh.py, bc.py)
+Added IWL=4/IWR=4 (periodic x) and IWB=4/IWT=4 (periodic y) support:
+- mesh.py: periodic ibar = numx_phys-2 (vs numx_phys-1), ghost delx/dely from opposite end
+- bc.py: copies U,V,P,F,PS across periodic boundaries; fixes Fortran bugs (missing U/V at IMAX/JMAX)
 
 ### PLANAR Disturbance Fix (initcond.py + slimMaster.f)
 Fixed three bugs in SUBROUTINE PLANAR:
@@ -83,16 +96,8 @@ Fixed three bugs in SUBROUTINE PLANAR:
 
 ## Known Issues / Incomplete
 
-- **pressure_iteration is scalar loops** — the SOLA Gauss-Seidel sweep is sequential;
-  needs Numba JIT or red-black vectorization for performance
-- **bc.py indexing** — some ghost cell copies use `P[imax-1,j] = P[im1,j]` where
-  imax-1 == im1 in 0-based indexing (copies to self). Works because hydrostatic init
-  fills ghosts separately, but should be audited
-- **No VOF advection** — F field is never updated during time-stepping
 - **No surface tension** — sigma parsed but unused
 - **No obstacles** — BETA mask allocated but never populated
-- **dely sizing** — Python dely has imax-1 entries (np.diff), Fortran DELY has IBAR2;
-  top ghost cell dely is clamped with min() in hydrostatic init
 
 ## Build and Run
 
@@ -121,5 +126,5 @@ python3 vmax.py sola ../../test/compare_python/RT160x200-*.vtk
 ## Dependencies
 - Python 3.10+
 - NumPy
-- Numba (for JIT-accelerated pressure solver)
+- Numba (JIT-accelerated solver, BC, and free-surface kernels)
 - gfortran (for Fortran reference code)

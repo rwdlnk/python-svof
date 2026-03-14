@@ -5,6 +5,9 @@ from typing import Optional
 
 @dataclass
 class RunConfig:
+    # geometry
+    icyl: int           # 0=planar, 1=cylindrical
+
     # materials / properties
     nmat: int
     vnu: float
@@ -16,6 +19,7 @@ class RunConfig:
     cangle_deg: float
 
     # output / timing
+    prefix: str         # output filename prefix (default "svof-")
     iplots: bool
     iare: bool
     imovy: bool
@@ -24,6 +28,12 @@ class RunConfig:
     pltst2: float
     pltdt1: float
     pltdt2: float
+
+    # fluid region (F=1) index bounds (1-based Fortran indices)
+    ifl: int
+    ifr: int
+    jfb: int
+    jft: int
 
     # boundary conditions
     iwl: int

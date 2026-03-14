@@ -2580,7 +2580,7 @@ C
       TWPRT=PRTDT
                             
       pltdt = pltdt1
-      TWPLT = pltst1 - pltdt
+      TWPLT = pltst1
 
       VCHGT=0.D0
       NOCON=0

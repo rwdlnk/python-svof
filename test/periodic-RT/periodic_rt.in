@@ -1,0 +1,62 @@
+# Periodic Rayleigh-Taylor instability test case (NMAT=2)
+# 40x80 uniform grid, heavy fluid on top, periodic in x
+# Tests IWL=4/IWR=4 periodic boundary conditions
+
+mesh
+0     # icyl (0=planar)
+1 1   # NKX NKY
+0.05  # XC (1D array, NKX long)
+20    # NXL (1D array, NKX long)
+20    # NXR (1D array, NKX long)
+0.0025 # DXmin (1D array, NKX long)
+0.10  # YC (1D array, NKY long)
+40    # NYL (1D array, NKY long)
+40    # NYR (1D array, NKY long)
+0.0025 # DYmin (1D array, NKY long)
+0.0 0.1 # XL (1D array, NKX+1 long)
+0.0 0.2 # YL (1D array, NKY+1 long)
+1 42 42 82 # IFL IFR JFB JFT (full width incl ghosts, top half = heavy fluid)
+
+properties
+2 # NMAT (two-fluid)
+1.044e-6 1.005e-6 # NU NUC
+1002.2 998.0 # RHOF RHOFC
+True 0.07 90.0 # ISURF10 sigma cangle
+
+output
+True False False # IPLOTS IARE IMOVY
+100.0 # PRTDT
+0.0 5.0 # PLTST1 PLTST2
+0.05 0.05 # PLTDT1 PLTDT2
+pRT- # PREFIX (output filename prefix, e.g. pRT-39x80-99.vtk)
+
+bcs
+4 4 1 1 # WL WR WT WB (periodic x, free-slip y)
+
+particles
+0 0 # NPX NPY
+0.0 0.0 # XPL XPR
+0.0 0.0 # YPB YPT
+
+obstacles
+0 # NOBS
+1 1 # IOMIN IOMAX (placeholders)
+1 1 # JOMIN JOMAX
+
+disturb
+1   # NDIS
+0   # IDIS
+0.005 # VORIG
+0.1 0.1 1 5 # R H ILOW IHIGH
+
+svof
+0.025 # EPSI
+1.7   # OMG
+1.0   # ALPHA
+0.0 -9.81 # Gx Gy
+0.0 0.0   # UI VI
+-1.0      # CSQ
+1. 1. 1.  # Fmass Flength Ftime
+False 0.0 # ISHvel SHvel
+0.0005 0.0 # DELT AUTOT
+0.5  # TWfin

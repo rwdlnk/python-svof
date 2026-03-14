@@ -20,3 +20,15 @@ fort.*
 
 # Backup files
 *.in.old
+
+# Screenshots
+*.png
+
+# Output directories (VTK runs)
+test/compare_fortran/
+test/compare_python/
+test/compare_fortran_long/
+test/compare_python_long/
+
+# Compiled Fortran binaries in test dirs
+test/**/slimMaster

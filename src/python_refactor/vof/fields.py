@@ -22,6 +22,7 @@ class Fields:
     DTANTH: np.ndarray
     PS: np.ndarray
     NF: np.ndarray     # integer flags
+    PR: np.ndarray     # region pressures (shape (20,), stays 0 for NMAT<=2)
 
     Fbar: np.ndarray   # e.g., shape (jbar-1,) or similar
 
@@ -47,6 +48,7 @@ class Fields:
         DTANTH = np.zeros(shape, dtype=float)
         PS = np.zeros(shape, dtype=float)
         NF = np.zeros(shape, dtype=int)
+        PR = np.zeros(20, dtype=float)
 
         # Fbar corresponds to 1D array over J (like NJF in Fortran)
         # Here we take it as jbar-1; you can tweak once we wire PRT, etc.
@@ -56,7 +58,7 @@ class Fields:
         return cls(
             UN=UN, VN=VN, PN=PN, FN=FN,
             U=U, V=V, P=P, F=F,
-            PETA=PETA, BETA=BETA, DTANTH=DTANTH, PS=PS, NF=NF,
+            PETA=PETA, BETA=BETA, DTANTH=DTANTH, PS=PS, NF=NF, PR=PR,
             Fbar=Fbar
         )
 

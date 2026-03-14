@@ -37,7 +37,12 @@ def read_keyword_deck(path: str | Path) -> Tuple[MeshInput, RunConfig]:
 
     # --- mesh block ---
     assert pop_line().lower() == "mesh"
-    icyl = _read_bool(pop_line().split()[0])
+    icyl_raw = pop_line().split()[0]
+    # ICYL can be bool (true/false) or int (0/1) in input decks
+    try:
+        icyl = int(icyl_raw)
+    except ValueError:
+        icyl = 1 if _read_bool(icyl_raw) else 0
     nkx, nky = map(int, pop_line().split())
 
     xc = np.fromstring(pop_line(), sep=" ", dtype=float)
@@ -76,8 +81,17 @@ def read_keyword_deck(path: str | Path) -> Tuple[MeshInput, RunConfig]:
     pltst1, pltst2 = map(float, pop_line().split())
     pltdt1, pltdt2 = map(float, pop_line().split())
 
+    # Optional prefix line (default "svof-")
+    # Peek: if the next token is the "bcs" section header, use default
+    next_line = pop_line()
+    if next_line.lower() == "bcs":
+        prefix = "svof-"
+    else:
+        prefix = next_line.strip()
+        # Now consume the actual "bcs" header
+        assert pop_line().lower() == "bcs"
+
     # --- bcs block ---
-    assert pop_line().lower() == "bcs"
     iwl, iwr, iwt, iwb = map(int, pop_line().split())
 
     # --- particles block ---
@@ -126,8 +140,11 @@ def read_keyword_deck(path: str | Path) -> Tuple[MeshInput, RunConfig]:
     )
 
     run_config = RunConfig(
+        icyl=icyl,
         nmat=nmat, vnu=vnu, vnuc=vnuc, rhof=rhof, rhofc=rhofc,
         isurf10=isurf10, sigma=sigma, cangle_deg=cangle,
+        ifl=ifl, ifr=ifr, jfb=jfb, jft=jft,
+        prefix=prefix,
         iplots=iplots, iare=iare, imovy=imovy, prtdt=prtdt,
         pltst1=pltst1, pltst2=pltst2, pltdt1=pltdt1, pltdt2=pltdt2,
         iwl=iwl, iwr=iwr, iwt=iwt, iwb=iwb,
@@ -158,18 +175,19 @@ def _write_array_5col(fh, arr_2d, ibar):
 
 
 def write_vtk_snapshot(outdir: Path, mesh: Mesh, fields: Fields,
-                       state: RunState, step: int) -> None:
+                       state: RunState, step: int,
+                       prefix: str = "svof-") -> None:
     """
     Write a VTK RECTILINEAR_GRID snapshot matching the Fortran WRITEVTK format:
       - node-based coordinates (IBAR+1 x JBAR+1) from mesh.x, mesh.y
       - CELL_DATA with IBAR*JBAR cells
       - F, P, U, V as separate SCALARS, 5 values per line in E15.8 format
-      - filename: RT{ibar}x{jbar}-{time_ms}.vtk
+      - filename: {prefix}{ibar}x{jbar}-{time_ms}.vtk
     """
     outdir = Path(outdir)
     ibar, jbar = mesh.ibar, mesh.jbar
     time_index = int(state.t * 1000.0)
-    fname = outdir / f"RT{ibar}x{jbar}-{time_index}.vtk"
+    fname = outdir / f"{prefix}{ibar}x{jbar}-{time_index}.vtk"
 
     # Node counts (one more than cell counts)
     nx = ibar + 1

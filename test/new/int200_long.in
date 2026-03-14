@@ -1,4 +1,4 @@
-# Sample input deck converted from legacy int200.in
+# Long run input deck (TWFIN=1.0)
 
 mesh
 False # icyl
@@ -19,10 +19,10 @@ properties
 2 # NMAT
 1.044e-6 1.005e-6 # NU NUC
 1002.2 998.0 # RHOF RHOFC
-True 0.07 90.0 # ISURF10 sigma cangle
+False 0.0 90.0 # ISURF10 sigma cangle
 
 output
-True False False # IPLOTS IARE IMOVY (IARE,IMOVY are not in legacy deck; set False)
+True False False # IPLOTS IARE IMOVY
 100.0 # PRTDT
 0.0 21.0 # PLTST1 PLTST2
 0.1 0.1 # PLTDT1 PLTDT2
@@ -43,7 +43,7 @@ obstacles
 disturb
 1   # NDIS
 0   # IDIS
-0.005 # VORIG
+0.0002 # VORIG
 0.4 0.25 1 10 # R H ILOW IHIGH
 
 svof
@@ -53,8 +53,7 @@ svof
 0.0 -9.81 # Gx Gy
 0.0 0.0   # UI VI
 -1.0      # CSQ
-1. 1. 1.  # Fmass Flength Ftime (legacy deck uses SI, so 1,1,1)
+1. 1. 1.  # Fmass Flength Ftime
 False 0.0 # ISHvel SHvel
 0.0005 0.0 # DELT AUTOT
-3.0  # TWfin
-
+1.0  # TWfin

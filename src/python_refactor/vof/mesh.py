@@ -11,6 +11,7 @@ class Mesh:
     delx: np.ndarray
     rdx: np.ndarray
     rx: np.ndarray
+    rxi: np.ndarray     # 1/xi (reciprocal of cell-center x)
 
     y: np.ndarray       # cell-face y
     yj: np.ndarray      # cell-center y
@@ -173,13 +174,16 @@ def meshset(mesh_in: MeshInput) -> Mesh:
 
     numy_phys = numy
 
-    # ibar/jbar: number of internal cells (like IBAR, JBAR)
-    ibar = numx_phys - 1
-    jbar = numy_phys - 1
-
     # Periodicity from wall types (IWR/IWT=4 => periodic)
     periodic_x = (mesh_in.iwr == 4)
     periodic_y = (mesh_in.iwt == 4)
+
+    # ibar/jbar: number of unique internal cells (like IBAR, JBAR)
+    # Periodic: NUMX faces wrap, so only NUMX-2 unique cells
+    #   (Fortran: IBAR = NUMX - 2, cell IM1 is periodic copy of cell 2)
+    # Non-periodic: NUMX faces → NUMX-1 cells
+    ibar = numx_phys - 2 if periodic_x else numx_phys - 1
+    jbar = numy_phys - 2 if periodic_y else numy_phys - 1
 
     # Ghost-cell counts
     nghost_x = 2 + (1 if periodic_x else 0)
@@ -189,21 +193,22 @@ def meshset(mesh_in: MeshInput) -> Mesh:
     imax = ibar + nghost_x
     jmax = jbar + nghost_y
 
-    # Build x with ghosts: prepend/append from physical faces
-    # For simplicity, make ghosts mirror spacing at boundaries;
-    # periodic will be enforced later in BC.
+    # Build x with ghosts.
+    # Layout: x[0] = left ghost face, x[1:1+numx_phys] = physical faces.
+    #
+    # Non-periodic (imax = numx_phys + 1):
+    #   Physical faces fill x[1]..x[numx_phys]; x[-1] is the last physical
+    #   face (right boundary); the right ghost cell's width comes from delx[-1].
+    #
+    # Periodic (imax = numx_phys + 0 since ibar = numx_phys - 2):
+    #   Physical faces x[1]..x[numx_phys] exactly fill all imax slots after x[0].
+    #   The last physical face (x[-1]) is the periodic boundary.  No extra face
+    #   is needed — the right ghost cell width is set via delx[-1].
     dx_left = x_phys[1] - x_phys[0]
     dx_right = x_phys[-1] - x_phys[-2]
     x = np.empty(imax, dtype=float)
-    # interior (physical) region
     x[1:1 + numx_phys] = x_phys
-    # left ghost(s)
     x[0] = x[1] - dx_left
-    if nghost_x == 3:
-        # one more ghost on the right for periodic case
-        x[1 + numx_phys] = x[1 + numx_phys - 1] + dx_right
-    # rightmost ghost (if nonperiodic, this is the only right ghost)
-    x[-1] = x[-2] + dx_right
 
     # Same for y
     dy_bottom = y_phys[1] - y_phys[0]
@@ -211,21 +216,36 @@ def meshset(mesh_in: MeshInput) -> Mesh:
     y = np.empty(jmax, dtype=float)
     y[1:1 + numy_phys] = y_phys
     y[0] = y[1] - dy_bottom
-    if nghost_y == 3:
-        y[1 + numy_phys] = y[1 + numy_phys - 1] + dy_top
-    y[-1] = y[-2] + dy_top
 
     # Derived arrays: centers, spacings, reciprocals
     xi = 0.5 * (x[:-1] + x[1:])
     yj = 0.5 * (y[:-1] + y[1:])
-    delx = np.diff(x)
-    dely = np.diff(y)
+
+    # delx/dely: cell widths matching Fortran DELX(1..IMAX), DELY(1..JMAX).
+    # np.diff(x) gives imax-1 entries; Fortran has imax entries including
+    # ghost cell widths.  Append the ghost cell width (= adjacent interior).
+    _dx = np.diff(x)
+    delx = np.empty(imax, dtype=float)
+    delx[:len(_dx)] = _dx
+    # Periodic: Fortran DELX(NUMXP1) = DELX(3), i.e. Python delx[2]
+    delx[-1] = delx[2] if periodic_x else delx[-2]
+
+    _dy = np.diff(y)
+    dely = np.empty(jmax, dtype=float)
+    dely[:len(_dy)] = _dy
+    # Periodic: Fortran DELY(NUMYP1) = DELY(3), i.e. Python dely[2]
+    dely[-1] = dely[2] if periodic_y else dely[-2]
+
     rdx = 1.0 / delx
     rdy = 1.0 / dely
 
     rx = np.zeros_like(x)
     nonzero_x = np.abs(x) > 0.0
     rx[nonzero_x] = 1.0 / x[nonzero_x]
+
+    rxi = np.zeros_like(xi)
+    nonzero_xi = np.abs(xi) > 0.0
+    rxi[nonzero_xi] = 1.0 / xi[nonzero_xi]
 
     ryj = np.zeros_like(yj)
     nonzero_yj = np.abs(yj) > 0.0
@@ -237,7 +257,7 @@ def meshset(mesh_in: MeshInput) -> Mesh:
     jm2 = jmax - 2
 
     return Mesh(
-        x=x, xi=xi, delx=delx, rdx=rdx, rx=rx,
+        x=x, xi=xi, delx=delx, rdx=rdx, rx=rx, rxi=rxi,
         y=y, yj=yj, dely=dely, rdy=rdy, ryj=ryj,
         ibar=ibar, jbar=jbar, imax=imax, jmax=jmax,
         im1=im1, jm1=jm1, im2=im2, jm2=jm2,

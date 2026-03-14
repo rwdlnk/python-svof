@@ -25,6 +25,9 @@ class RunState:
     flgc: float
     fnoc: float
 
+    # geometry
+    cyl: float          # 0.0=planar, 1.0=cylindrical
+
     # physical parameters (copied from RunConfig for convenience)
     gx: float
     gy: float
@@ -41,6 +44,12 @@ class RunState:
     isurf10: bool
     ishvel: bool
     shvel: float
+    vchgt: float
+
+    # Stability limits (set by compute_beta)
+    dtvis: float     # viscous stability limit
+    dtsft: float     # surface tension stability limit
+    rdtexp: float    # acoustic CFL rate
 
     @classmethod
     def from_config(cls, cfg: RunConfig) -> "RunState":
@@ -50,6 +59,7 @@ class RunState:
             nocon=0,
             nflgc=0,
             nmat=cfg.nmat,
+            cyl=float(cfg.icyl),
             t=0.0,
             delt=cfg.delt,
             twprt=cfg.prtdt,
@@ -74,5 +84,9 @@ class RunState:
             isurf10=cfg.isurf10,
             ishvel=cfg.ishvel,
             shvel=cfg.shvel,
+            vchgt=0.0,
+            dtvis=1.0e10,
+            dtsft=1.0e10,
+            rdtexp=1.0e10,
         )
 
