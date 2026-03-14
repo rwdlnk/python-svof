@@ -15,7 +15,7 @@ src/slimMaster/          # Original Fortran code
   compit                 # Compile script: gfortran -std=legacy -fdec -O4
 
 src/python_refactor/     # Python port
-  main.py                # CLI driver: time loop, plot timing, VTK output
+  solavof.py             # CLI driver: time loop, plot timing, VTK output
   vof/
     config.py            # RunConfig dataclass (all input parameters)
     state.py             # RunState dataclass (runtime counters, physics params)
@@ -113,7 +113,7 @@ cd ../../test/compare_fortran
 ### Python
 ```bash
 cd src/python_refactor
-python3 main.py -i ../../test/new/int200.in -o ../../test/compare_python
+python3 solavof.py -i ../../test/new/int200.in -o ../../test/compare_python
 ```
 
 ### Compare
