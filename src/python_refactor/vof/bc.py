@@ -306,3 +306,167 @@ def free_surface_bc(mesh: Mesh, fields: Fields, state: RunState,
         mesh.rdx, mesh.rdy, mesh.rxi, mesh.delx, mesh.dely,
         1, mesh.imax - 2 + 1, 1, mesh.jmax - 2 + 1,
         state.cyl, state.nmat, state.flg, state.iter)
+
+
+# ---------------------------------------------------------------------------
+# MPI-safe BC kernel: skips ghost-cell copies when iwl/iwr/iwt/iwb == 0
+# ---------------------------------------------------------------------------
+@njit(cache=True)
+def _apply_bc_kernel_mpi(U, V, P, F, PS, delx, dely, x, rx,
+                         imax, jmax, iwl, iwr, iwt, iwb,
+                         iter_, cyl, ishvel, shvel):
+    """Numba-accelerated ghost-cell BC sweep for MPI subdomains.
+
+    Identical to _apply_bc_kernel except that the unconditional ghost-cell
+    copies (F[0,:]=F[1,:] etc.) are guarded by iwl/iwr/iwt/iwb != 0.
+    When a wall type is 0, this rank's ghost cells on that side are filled
+    by halo exchange, not by BC.
+    """
+    fIM1 = imax - 2
+    fIM2 = imax - 3
+    fIMAX = imax - 1
+    fJM1 = jmax - 2
+    fJM2 = jmax - 3
+    fJMAX = jmax - 1
+
+    # Left/right boundaries
+    for j in range(jmax):
+        # Only copy F/P to ghosts on physical walls
+        if iwl != 0:
+            F[0, j] = F[1, j]
+            P[0, j] = P[1, j]
+        if iwr != 0:
+            F[fIMAX, j] = F[fIM1, j]
+            P[fIMAX, j] = P[fIM1, j]
+
+        # Left wall
+        if iwl == 1:
+            U[0, j] = 0.0
+            V[0, j] = V[1, j]
+        elif iwl == 2:
+            U[0, j] = 0.0
+            V[0, j] = -V[1, j] * delx[0] / delx[1]
+        elif iwl == 3 or iwl == 5:
+            if iter_ <= 0:
+                U[0, j] = U[1, j] * (x[1] * rx[0] * cyl + 1.0 - cyl)
+                V[0, j] = V[1, j]
+        elif iwl == 4:
+            U[0, j] = U[fIM2, j]
+            V[0, j] = V[fIM2, j]
+            P[0, j] = P[fIM2, j]
+            F[0, j] = F[fIM2, j]
+
+        # Right wall
+        if iwr == 1:
+            U[fIM1, j] = 0.0
+            V[fIMAX, j] = V[fIM1, j]
+        elif iwr == 2:
+            U[fIM1, j] = 0.0
+            V[fIMAX, j] = -V[fIM1, j] * delx[fIMAX] / delx[fIM1]
+        elif iwr == 3 or iwr == 5:
+            if iter_ <= 0:
+                U[fIM1, j] = U[fIM2, j] * (x[fIM2] * rx[fIM1] * cyl + 1.0 - cyl)
+                V[fIMAX, j] = V[fIM1, j]
+        elif iwr == 4:
+            U[fIM1, j] = U[1, j]
+            V[fIM1, j] = V[1, j]
+            P[fIM1, j] = P[1, j]
+            PS[fIM1, j] = PS[1, j]
+            F[fIM1, j] = F[1, j]
+            V[fIMAX, j] = V[2, j]
+            F[fIMAX, j] = F[2, j]
+            U[fIMAX, j] = U[2, j]
+
+    # Bottom/top boundaries
+    for i in range(imax):
+        if iwb != 0:
+            F[i, 0] = F[i, 1]
+            P[i, 0] = P[i, 1]
+        if iwt != 0:
+            F[i, fJMAX] = F[i, fJM1]
+            P[i, fJMAX] = P[i, fJM1]
+
+        # Top wall
+        if iwt == 1:
+            V[i, fJM1] = 0.0
+            U[i, fJMAX] = U[i, fJM1]
+        elif iwt == 2:
+            V[i, fJM1] = 0.0
+            U[i, fJMAX] = -U[i, fJM1] * dely[fJMAX] / dely[fJM1]
+        elif iwt == 3 or iwt == 5:
+            if iter_ <= 0:
+                V[i, fJM1] = V[i, fJM2]
+                U[i, fJMAX] = U[i, fJM1]
+        elif iwt == 4:
+            V[i, fJM1] = V[i, 1]
+            U[i, fJM1] = U[i, 1]
+            P[i, fJM1] = P[i, 1]
+            PS[i, fJM1] = PS[i, 1]
+            F[i, fJM1] = F[i, 1]
+            U[i, fJMAX] = U[i, 2]
+            F[i, fJMAX] = F[i, 2]
+            V[i, fJMAX] = V[i, 2]
+
+        # Bottom wall
+        if iwb == 1:
+            V[i, 0] = 0.0
+            U[i, 0] = U[i, 1]
+        elif iwb == 2:
+            V[i, 0] = 0.0
+            U[i, 0] = -U[i, 1]
+        elif iwb == 3 or iwb == 5:
+            if iter_ <= 0:
+                V[i, 0] = V[i, 1]
+                U[i, 0] = U[i, 1]
+        elif iwb == 4:
+            V[i, 0] = V[i, fJM2]
+            U[i, 0] = U[i, fJM2]
+            F[i, 0] = F[i, fJM2]
+
+    # Shear velocity BC (only on physical walls — check iwb/iwt)
+    if ishvel and iwb != 0 and iwt != 0:
+        for i in range(imax):
+            U[i, 0] = shvel
+            U[i, 1] = shvel
+            U[i, fJMAX] = -shvel
+            U[i, fJM1] = -shvel
+
+
+# ---------------------------------------------------------------------------
+# MPI-aware BC wrappers
+# ---------------------------------------------------------------------------
+
+def apply_boundary_conditions_mpi(decomp, mesh, fields, state,
+                                  iwl, iwr, iwt, iwb):
+    """
+    MPI-aware boundary conditions. Only applies physical wall BCs on ranks
+    that own a global boundary. For interior inter-rank boundaries, halos
+    are filled by halo_exchange instead.
+
+    Uses _apply_bc_kernel_mpi which skips ghost-cell copies for iwl/iwr/iwt/iwb=0.
+    """
+    local_iwl = iwl if decomp.has_left_wall else 0
+    local_iwr = iwr if decomp.has_right_wall else 0
+    local_iwt = iwt if decomp.has_top_wall else 0
+    local_iwb = iwb if decomp.has_bottom_wall else 0
+
+    _apply_bc_kernel_mpi(
+        fields.U, fields.V, fields.P, fields.F, fields.PS,
+        mesh.delx, mesh.dely, mesh.x, mesh.rx,
+        mesh.imax, mesh.jmax,
+        local_iwl, local_iwr, local_iwt, local_iwb,
+        state.iter, state.cyl,
+        1 if state.ishvel else 0, state.shvel)
+
+
+def free_surface_bc_mpi(decomp, mesh, fields, state, cfg):
+    """
+    MPI-aware free-surface BC. The kernel operates on all interior cells
+    of the local subdomain — obstacle averaging and surface velocity
+    extrapolation work correctly since halos have been exchanged first.
+    """
+    _free_surface_bc_kernel(
+        fields.U, fields.V, fields.P, fields.F, fields.BETA,
+        mesh.rdx, mesh.rdy, mesh.rxi, mesh.delx, mesh.dely,
+        1, mesh.imax - 2 + 1, 1, mesh.jmax - 2 + 1,
+        state.cyl, state.nmat, state.flg, state.iter)

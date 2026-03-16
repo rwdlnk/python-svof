@@ -243,3 +243,29 @@ def write_vtk_snapshot(outdir: Path, mesh: Mesh, fields: Fields,
 
     print(f"Wrote VTK snapshot: {fname}")
 
+
+def write_vtk_snapshot_mpi(decomp, outdir, global_mesh, local_fields,
+                           global_fields, state, step, prefix="svof-"):
+    """
+    MPI-aware VTK output: gather fields to rank 0, then write using
+    the existing write_vtk_snapshot function.
+
+    Parameters
+    ----------
+    decomp : Decomposition
+    outdir : Path
+    global_mesh : Mesh (global, meaningful on rank 0)
+    local_fields : Fields (local subdomain)
+    global_fields : Fields (global, allocated on rank 0, None on others)
+    state : RunState
+    step : int
+    prefix : str
+    """
+    from .decomp import gather_global_fields
+
+    gather_global_fields(decomp, global_mesh, local_fields, global_fields)
+
+    if decomp.rank == 0:
+        write_vtk_snapshot(outdir, global_mesh, global_fields,
+                           state, step, prefix)
+

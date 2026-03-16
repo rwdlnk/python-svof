@@ -36,6 +36,10 @@ test/
     slimmaster/          #   Fortran legacy input + dint.h (int40.in)
   periodic-RT/           # Periodic Rayleigh-Taylor test (NMAT=2, 40x80, IWL/IWR=4)
                          #   dint.h, int80.in (Fortran), periodic_rt.in (Python)
+  scaling/               # MPI strong-scaling study
+    RT320x400/           #   320x400 grid (128k cells), int400.in
+    RT640x800/           #   640x800 grid (512k cells), int800.in
+    plot_scaling.py      #   Generates speedup & efficiency plots
 ```
 
 ## Key Decisions and Changes Made
@@ -94,6 +98,23 @@ Fixed three bugs in SUBROUTINE PLANAR:
 2. Random coefficients changed from [0,1) to [-1,+1] per Youngs (1984) formulation
 3. VORIG now scales the total sum (not each term), so it controls max amplitude
 
+### Per-Section Timers + CSV Export (solavof.py)
+Added wall-clock timing instrumentation for MPI scaling studies:
+- `time.perf_counter()` wraps each major solver section: tilde, halo, bc, pressure,
+  vfconv, petacal, deltadj, io, other, total
+- Cumulative timers printed every `print_every` steps alongside existing velocity output
+- End-of-run totals table; MPI path uses `comm.Allreduce(MAX)` for bottleneck rank
+- Per-step CSV written to `{outdir}/timers_{prefix}_{grid}_{size}ranks.csv`
+- MPI path adds `comm.barrier()` before each step for synchronized timing
+
+### MPI Strong Scaling Results (RT Rayleigh-Taylor)
+Tested on 1–24 cores across three grid resolutions:
+- 160x200 (32k cells): peaks at ~5x speedup on 20 ranks, communication-bound above np=8
+- 320x400 (128k cells): ~14x speedup on 20 ranks, good scaling through np=16
+- 640x800 (512k cells): ~24x speedup on 20 ranks, near-ideal to np=16
+- Super-linear speedup at low rank counts (cache effects on larger grids)
+- All grids show rolloff at np=24 (unfavorable subdomain aspect ratio)
+
 ## Known Issues / Incomplete
 
 - **No surface tension** — sigma parsed but unused
@@ -123,8 +144,22 @@ python3 vmax.py sola ../../test/compare_fortran/RT160x200-*.vtk
 python3 vmax.py sola ../../test/compare_python/RT160x200-*.vtk
 ```
 
+### MPI Scaling Study
+```bash
+cd src/python_refactor
+# Serial baseline
+python3 solavof.py -i ../../test/scaling/RT320x400/int400.in -o /tmp/rt320_np1
+# Parallel (e.g. 8 ranks)
+mpirun -np 8 python3 solavof.py -i ../../test/scaling/RT320x400/int400.in -o /tmp/rt320_np8
+# Plot results
+cd ../../test/scaling
+python3 plot_scaling.py
+```
+
 ## Dependencies
 - Python 3.10+
 - NumPy
 - Numba (JIT-accelerated solver, BC, and free-surface kernels)
+- mpi4py (for MPI parallel runs)
+- matplotlib (for scaling plots)
 - gfortran (for Fortran reference code)

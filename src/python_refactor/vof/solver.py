@@ -403,11 +403,20 @@ def pressure_iteration(mesh: Mesh, fields: Fields, state: RunState,
 
 @njit(cache=True)
 def _vfconv_kernel(U, V, F, FN, NF, BETA, delx, dely, rdx, rdy, xi,
-                   im1, jm1, imax, jmax, dt, cyl):
+                   im1, jm1, imax, jmax, dt, cyl, i_lo, j_lo,
+                   skip_phase_b):
     """
     Numba kernel for VFCONV.  Operates on 0-based arrays.
     Fortran indices 1..IM1, 1..JM1  →  Python 0..im1-1, 0..jm1-1
     Fortran IMAX (1-based size)     →  Python imax (0-based size)
+
+    i_lo, j_lo: starting indices for Phase A loops.  Use 1 to skip ghost
+    cells (required for MPI to avoid double-counting flux at inter-rank
+    boundaries; safe for serial since ghost-cell fluxes are zero at walls
+    and their F values are overwritten by BC anyway).
+
+    skip_phase_b: if True, skip Phase B (F cleanup/clipping).  Used by
+    MPI to defer Phase B until after halo_accumulate + halo_exchange.
 
     Returns (flgc, vchgt_delta).
     """
@@ -416,8 +425,8 @@ def _vfconv_kernel(U, V, F, FN, NF, BETA, delx, dely, rdx, rdy, xi,
     vchgt = 0.0
 
     # --- Phase A: donor-acceptor flux ---
-    for j in range(jm1):        # Fortran J=1..JM1
-        for i in range(im1):    # Fortran I=1..IM1
+    for j in range(j_lo, jm1):
+        for i in range(i_lo, im1):
             vx = U[i, j] * dt
             vy = V[i, j] * dt
             abvx = abs(vx)
@@ -492,6 +501,9 @@ def _vfconv_kernel(U, V, F, FN, NF, BETA, delx, dely, rdx, rdy, xi,
             F[i, ja] += fy * rdy[ja]
 
     # --- Phase B: F cleanup ---
+    if skip_phase_b:
+        return flgc, vchgt
+
     # Fortran loops I=2..IM1, J=2..JM1 (1-based) → 1..im1-1, 1..jm1-1 (0-based)
     for j in range(1, jm1):
         for i in range(1, im1):
@@ -523,10 +535,19 @@ def _vfconv_kernel(U, V, F, FN, NF, BETA, delx, dely, rdx, rdy, xi,
     return flgc, vchgt
 
 
-def vfconv(mesh: Mesh, fields: Fields, state: RunState) -> None:
+def vfconv(mesh: Mesh, fields: Fields, state: RunState,
+           i_lo: int = 1, j_lo: int = 1,
+           skip_phase_b: bool = False) -> None:
     """
     VOF advection: port of Fortran SUBROUTINE VFCONV.
     Convects the F field using the Hirt-Nichols donor-acceptor method.
+
+    i_lo, j_lo: starting indices for Phase A loops (default 1, skipping
+    ghost cells — safe for serial and required for MPI).
+
+    skip_phase_b: if True, only run Phase A (flux computation).  Phase B
+    (F cleanup/clipping) must be called separately via vfconv_phase_b().
+    Used by MPI to insert halo_accumulate+halo_exchange between phases.
     """
     if state.icyle < 1:
         return
@@ -535,12 +556,61 @@ def vfconv(mesh: Mesh, fields: Fields, state: RunState) -> None:
         fields.U, fields.V, fields.F, fields.FN, fields.NF, fields.BETA,
         mesh.delx, mesh.dely, mesh.rdx, mesh.rdy, mesh.xi,
         mesh.im1, mesh.jm1, mesh.imax, mesh.jmax,
-        state.delt, state.cyl)
+        state.delt, state.cyl, i_lo, j_lo, skip_phase_b)
 
     state.flgc = flgc
     state.vchgt += vchgt_delta
     if flgc > 0.5:
         state.nflgc += 1
+
+
+@njit(cache=True)
+def _vfconv_phase_b_kernel(F, BETA, delx, dely, xi, im1, jm1, cyl):
+    """Phase B of vfconv: F cleanup (clipping and bleedoff)."""
+    PI = 3.14159265358979
+    nxi = xi.shape[0]
+    vchgt = 0.0
+
+    for j in range(1, jm1):
+        for i in range(1, im1):
+            if BETA[i, j] < 0.0:
+                continue
+
+            vchg = 0.0
+            if F[i, j] > EMF and F[i, j] < EMF1:
+                pass  # surface cell, no snapping
+            elif F[i, j] >= EMF1:
+                vchg = -(1.0 - F[i, j])
+                F[i, j] = 1.0
+            else:
+                vchg = F[i, j]
+                F[i, j] = 0.0
+
+            vol_factor = xi[i] * 2.0 * PI * cyl + (1.0 - cyl) if i < nxi else (1.0 - cyl)
+            vchgt += vchg * delx[i] * dely[j] * vol_factor
+
+            # Full cell adjacent to void: bleed off to maintain surface layer
+            if F[i, j] >= EMF1:
+                if (F[i + 1, j] < EMF or F[i - 1, j] < EMF or
+                        F[i, j + 1] < EMF or F[i, j - 1] < EMF):
+                    F[i, j] -= 1.1 * EMF
+                    vchg2 = 1.1 * EMF
+                    vchgt += vchg2 * delx[i] * dely[j] * vol_factor
+
+    return vchgt
+
+
+def vfconv_phase_b(mesh: Mesh, fields: Fields, state: RunState) -> None:
+    """Run Phase B of vfconv (F cleanup) as a separate step.
+
+    Called after halo_accumulate + halo_exchange in MPI mode so that
+    F clipping sees the complete flux from all neighbors.
+    """
+    vchgt_delta = _vfconv_phase_b_kernel(
+        fields.F, fields.BETA,
+        mesh.delx, mesh.dely, mesh.xi,
+        mesh.im1, mesh.jm1, state.cyl)
+    state.vchgt += vchgt_delta
 
 
 # =====================================================================
@@ -1096,3 +1166,135 @@ def deltadj(mesh, fields, state):
     # Recompute BETA if DELT changed and NMAT != 1
     if state.delt != deltn and state.nmat != 1:
         compute_beta(mesh, fields, state)
+
+
+# =====================================================================
+# MPI-aware wrappers for compute_beta and deltadj
+# =====================================================================
+
+def compute_beta_mpi(mesh, fields, state, comm):
+    """
+    Compute BETA with global Allreduce for stability limits.
+    Each rank computes local dtvis, dtsft, rdtexp, then we take
+    the global MIN/MAX as appropriate.
+    """
+    ds, dtvis, dtsft, rdtexp = _compute_beta_kernel(
+        fields.F, fields.BETA,
+        mesh.delx, mesh.dely, mesh.rdx, mesh.rdy,
+        mesh.im1, mesh.jm1, state.delt,
+        state.rhof, state.rhofc, state.rhof - state.rhofc,
+        state.csq, state.omg, state.vnu, state.vnuc, state.sigma,
+        state.cyl)
+
+    # Global reductions
+    global_vals = np.array([dtvis, dtsft], dtype=float)
+    comm.Allreduce(np.array([dtvis, dtsft], dtype=float),
+                   global_vals, op=_mpi_min_op())
+    state.dtvis = global_vals[0]
+    state.dtsft = global_vals[1]
+
+    # rdtexp depends on ds (min cell size globally)
+    global_ds = np.array([ds], dtype=float)
+    comm.Allreduce(np.array([ds], dtype=float), global_ds, op=_mpi_min_op())
+    ds_global = global_ds[0]
+
+    # Recompute rdtexp from global ds
+    if state.csq >= 0.0:
+        state.rdtexp = 2.0 * abs(state.csq) ** 0.5 / ds_global
+    else:
+        state.rdtexp = 1.0e10
+
+
+def deltadj_mpi(mesh, fields, state, comm):
+    """
+    Adaptive time stepping with MPI reductions.
+    """
+    deltn = state.delt
+
+    # --- Courant rollback (all ranks must agree) ---
+    # First, Allreduce flgc so all ranks agree
+    flgc_global = np.array([state.flgc], dtype=float)
+    comm.Allreduce(np.array([state.flgc], dtype=float),
+                   flgc_global, op=_mpi_max_op())
+    state.flgc = flgc_global[0]
+
+    if state.flgc >= 0.5:
+        state.t -= state.delt
+        state.icyle -= 1
+        state.delt /= 2.0
+        fields.P[:] = fields.PN
+        fields.F[:] = fields.FN
+        fields.U.fill(0.0)
+        fields.V.fill(0.0)
+        state.nflgc += 1
+
+    # --- Auto time stepping ---
+    if state.autot < 0.5 and state.fnoc < 0.5:
+        if state.delt != deltn and state.nmat != 1:
+            compute_beta_mpi(mesh, fields, state, comm)
+        return
+
+    if state.fnoc > 0.5:
+        state.delt /= 2.0
+
+    # Find maximum velocity derivatives (local)
+    xi = mesh.xi
+    yj = mesh.yj
+    im1 = mesh.im1
+    jm1 = mesh.jm1
+    UN = fields.UN
+    VN = fields.VN
+
+    dumx = EM10
+    dvmx = EM10
+
+    nxi = len(xi)
+    nyj = len(yj)
+
+    for j in range(1, jm1):
+        for i in range(1, im1):
+            dxi = xi[min(i + 1, nxi - 1)] - xi[i] if i + 1 < nxi else xi[i] - xi[i - 1]
+            dyj = yj[min(j + 1, nyj - 1)] - yj[j] if j + 1 < nyj else yj[j] - yj[j - 1]
+            udm = abs(UN[i, j]) / dxi
+            vdm = abs(VN[i, j]) / dyj
+            dumx = max(dumx, udm)
+            dvmx = max(dvmx, vdm)
+
+    # Global max of velocity derivatives
+    local_maxes = np.array([dumx, dvmx], dtype=float)
+    global_maxes = np.empty(2, dtype=float)
+    comm.Allreduce(local_maxes, global_maxes, op=_mpi_max_op())
+    dumx = global_maxes[0]
+    dvmx = global_maxes[1]
+
+    dtmp = 1.01
+    if state.iter > 25:
+        dtmp = 0.99
+    delto = state.delt * dtmp
+    con = 0.25
+    delt_cfl_u = con / dumx
+    delt_cfl_v = con / dvmx
+
+    delt_new = min(delto, delt_cfl_u, delt_cfl_v, state.dtvis, state.dtsft)
+
+    delt_min = 1.0e-10
+    if delt_new < delt_min:
+        if comm.Get_rank() == 0:
+            print(f"DELTADJ: time step too small ({delt_new:.3e}), "
+                  f"setting to {delt_min:.3e}")
+        delt_new = delt_min
+
+    state.delt = delt_new
+
+    if state.delt != deltn and state.nmat != 1:
+        compute_beta_mpi(mesh, fields, state, comm)
+
+
+def _mpi_min_op():
+    from mpi4py import MPI
+    return MPI.MIN
+
+
+def _mpi_max_op():
+    from mpi4py import MPI
+    return MPI.MAX

@@ -19,13 +19,14 @@ properties
 2 # NMAT
 1.044e-6 1.005e-6 # NU NUC
 1002.2 998.0 # RHOF RHOFC
-True 0.07 90.0 # ISURF10 sigma cangle
+False 0.0 90.0 # ISURF10 sigma cangle
 
 output
 True False False # IPLOTS IARE IMOVY (IARE,IMOVY are not in legacy deck; set False)
 100.0 # PRTDT
 0.0 21.0 # PLTST1 PLTST2
 0.1 0.1 # PLTDT1 PLTDT2
+RTmpi # Prefix for file name
 
 bcs
 1 1 1 2 # WL WR WT WB
@@ -41,10 +42,10 @@ obstacles
 1 1 # JOMIN JOMAX
 
 disturb
-1   # NDIS
+6   # NDIS
 0   # IDIS
-0.005 # VORIG
-0.4 0.25 1 10 # R H ILOW IHIGH
+0.0005 # VORIG
+0.4 0.25 1 90 # R H ILOW IHIGH
 
 svof
 0.025 # EPSI
@@ -55,6 +56,6 @@ svof
 -1.0      # CSQ
 1. 1. 1.  # Fmass Flength Ftime (legacy deck uses SI, so 1,1,1)
 False 0.0 # ISHvel SHvel
-0.0005 0.0 # DELT AUTOT
-3.0  # TWfin
+0.0002 0.0 # DELT AUTOT
+6.0  # TWfin
 
